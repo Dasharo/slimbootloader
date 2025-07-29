@@ -81,17 +81,18 @@ else
   cp edk2/Build/UefiPayloadPkgX64/UniversalPayload.elf PayloadPkg/PayloadBins/
   docker run --rm -i -u $UID -v "$input":/tmp/image.rom -v "$PWD":/home/docker/slimbootloader \
     -w /home/docker/slimbootloader sbl /bin/bash <<EOF
-export SBL_KEY_DIR="\${PWD}/SblKeys"
-if [ ! -d "\$SBL_KEY_DIR" ]; then
-  python BootloaderCorePkg/Tools/GenerateKeys.py -k "\$SBL_KEY_DIR"
-fi
-python BuildLoader.py build "$platform" -r \
-  -p "OsLoader.efi:LLDR:Lz4;UniversalPayload.elf:UEFI:Lzma"
-python Platform/AlderlakeBoardPkg/Script/StitchLoader.py \
-  -i "/tmp/image.rom" \
-  -s "Outputs/$platform/SlimBootloader.bin" \
-  -o "Outputs/$platform/ifwi-release.bin" \
-  -p "$platform_data"
+      set -e
+      export SBL_KEY_DIR="\${PWD}/SblKeys"
+      if [ ! -d "\$SBL_KEY_DIR" ]; then
+        python BootloaderCorePkg/Tools/GenerateKeys.py -k "\$SBL_KEY_DIR"
+      fi
+      python BuildLoader.py build "$platform" -r \
+        -p "OsLoader.efi:LLDR:Lz4;UniversalPayload.elf:UEFI:Lzma"
+              python Platform/AlderlakeBoardPkg/Script/StitchLoader.py \
+                -i "/tmp/image.rom" \
+                -s "Outputs/$platform/SlimBootloader.bin" \
+                -o "Outputs/$platform/ifwi-release.bin" \
+                -p "$platform_data"
 EOF
   fi
 }
