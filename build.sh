@@ -8,6 +8,7 @@ usage() {
   echo "${0} CMD"
   echo "Available CMDs:"
   echo -e "\todroid_h4              - build Dasharo compatible with Hardkernel ODROID H4"
+  echo -e "\tqemu                   - build Dasharo compatible with QEMU Q35"
 }
 
 INPUT_IMAGE="${INPUT_IMAGE:-image.rom}"
@@ -27,6 +28,14 @@ build_odroid_h4() {
   build_slimloader odroidh4 "0xAAFFFF0C"
   echo "Result binary placed in $PWD/Outputs/odroidh4/ifwi-release.bin"
   sha256sum Outputs/odroidh4/ifwi-release.bin >Outputs/odroidh4/ifwi-release.bin.sha256
+}
+
+build_qemu() {
+  docker build -t sbl --network=host .
+  # build_edk2 "edk2-stable202505" "$flags"
+  build_slimloader qemu ""
+  echo "Result binary placed in $PWD/Outputs/qemu/SlimBootloader.bin"
+  sha256sum Outputs/qemu/SlimBootloader.bin >Outputs/qemu/SlimBootloader.bin.sha256
 }
 
 build_edk2() {
@@ -57,6 +66,17 @@ build_slimloader() {
   platform_data="$2"
   input="$(realpath "$INPUT_IMAGE")"
   git submodule update --init --checkout --recursive --depth 1
+  if [ "$platform" = "qemu" ]; then
+    docker run --rm -i -u $UID -v "$input":/tmp/image.rom -v "$PWD":/home/docker/slimbootloader \
+      -w /home/docker/slimbootloader sbl /bin/bash <<EOF
+          set -e
+          export SBL_KEY_DIR="\${PWD}/SblKeys"
+          if [ ! -d "\$SBL_KEY_DIR" ]; then
+            python BootloaderCorePkg/Tools/GenerateKeys.py -k "\$SBL_KEY_DIR"
+          fi
+          python BuildLoader.py build "$platform"
+EOF
+else
   mkdir -p PayloadPkg/PayloadBins/
   cp edk2/Build/UefiPayloadPkgX64/UniversalPayload.elf PayloadPkg/PayloadBins/
   docker run --rm -i -u $UID -v "$input":/tmp/image.rom -v "$PWD":/home/docker/slimbootloader \
@@ -73,6 +93,7 @@ python Platform/AlderlakeBoardPkg/Script/StitchLoader.py \
   -o "Outputs/$platform/ifwi-release.bin" \
   -p "$platform_data"
 EOF
+  fi
 }
 
 if [ $# -ne 1 ]; then
@@ -87,6 +108,9 @@ CMD="$1"
 case "$CMD" in
     "odroid_h4" | "odroid_H4" | "ODROID_H4" )
         build_odroid_h4 ""
+        ;;
+    "qemu" | "QEMU" )
+        build_qemu ""
         ;;
     *)
         echo "Invalid command: \"$CMD\""
