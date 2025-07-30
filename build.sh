@@ -32,7 +32,6 @@ build_odroid_h4() {
 
 build_qemu() {
   docker build -t sbl --network=host .
-  # build_edk2 "edk2-stable202505" "$flags"
   build_slimloader qemu ""
   echo "Result binary placed in $PWD/Outputs/qemu/SlimBootloader.bin"
   sha256sum Outputs/qemu/SlimBootloader.bin >Outputs/qemu/SlimBootloader.bin.sha256
