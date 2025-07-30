@@ -56,7 +56,7 @@ build_edk2() {
     make -C BaseTools
     python ./UefiPayloadPkg/UniversalPayloadBuild.py -t GCC5 -o Dasharo -b RELEASE \
       $FLAGS
-  EOF
+EOF
   cd ..
 }
 
@@ -68,13 +68,13 @@ build_slimloader() {
   if [ "$platform" = "qemu" ]; then
     docker run --rm -i -u $UID -v "$PWD":/home/docker/slimbootloader \
       -w /home/docker/slimbootloader sbl /bin/bash <<EOF
-          set -e
-          export SBL_KEY_DIR="\${PWD}/SblKeys"
-          if [ ! -d "\$SBL_KEY_DIR" ]; then
-            python BootloaderCorePkg/Tools/GenerateKeys.py -k "\$SBL_KEY_DIR"
-          fi
-          python BuildLoader.py build "$platform"
-    EOF
+        set -e
+        export SBL_KEY_DIR="\${PWD}/SblKeys"
+        if [ ! -d "\$SBL_KEY_DIR" ]; then
+          python BootloaderCorePkg/Tools/GenerateKeys.py -k "\$SBL_KEY_DIR"
+        fi
+        python BuildLoader.py build "$platform"
+EOF
   else
     mkdir -p PayloadPkg/PayloadBins/
     cp edk2/Build/UefiPayloadPkgX64/UniversalPayload.elf PayloadPkg/PayloadBins/
@@ -87,12 +87,12 @@ build_slimloader() {
         fi
         python BuildLoader.py build "$platform" -r \
           -p "OsLoader.efi:LLDR:Lz4;UniversalPayload.elf:UEFI:Lzma"
-                python Platform/AlderlakeBoardPkg/Script/StitchLoader.py \
-                  -i "/tmp/image.rom" \
-                  -s "Outputs/$platform/SlimBootloader.bin" \
-                  -o "Outputs/$platform/ifwi-release.bin" \
-                  -p "$platform_data"
-    EOF
+        python Platform/AlderlakeBoardPkg/Script/StitchLoader.py \
+          -i "/tmp/image.rom" \
+          -s "Outputs/$platform/SlimBootloader.bin" \
+          -o "Outputs/$platform/ifwi-release.bin" \
+          -p "$platform_data"
+EOF
   fi
 }
 
