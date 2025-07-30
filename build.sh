@@ -67,7 +67,7 @@ build_slimloader() {
   input="$(realpath "$INPUT_IMAGE")"
   git submodule update --init --checkout --recursive --depth 1
   if [ "$platform" = "qemu" ]; then
-    docker run --rm -i -u $UID -v "$input":/tmp/image.rom -v "$PWD":/home/docker/slimbootloader \
+    docker run --rm -i -u $UID -v "$PWD":/home/docker/slimbootloader \
       -w /home/docker/slimbootloader sbl /bin/bash <<EOF
           set -e
           export SBL_KEY_DIR="\${PWD}/SblKeys"
