@@ -14,6 +14,7 @@ usage() {
 DOCKER_IMAGE=${DOCKER_IMAGE:-ghcr.io/dasharo/dasharo-sdk}
 DOCKER_IMAGE_VER=${DOCKER_IMAGE_VER:-v1.7.0}
 SBL_KEY_DIR=${SBL_KEY_DIR:-"${PWD}/SblTestKeys"}
+DEBUG=${DEBUG:-0}
 
 EDK2_FLAGS="-D CRYPTO_PROTOCOL_SUPPORT=TRUE -D SIO_BUS_ENABLE=TRUE \
     -D PERFORMANCE_MEASUREMENT_ENABLE=TRUE \
@@ -43,8 +44,13 @@ build_odroid_h4() {
   stitch_loader odroid_h4 image.bin AlderlakeBoardPkg 0xAAFFFF0C
   rm image.bin
 
-  echo "Result binary placed in $PWD/Outputs/odroid_h4/ifwi-release.bin"
-  sha256sum Outputs/odroid_h4/ifwi-release.bin > Outputs/odroid_h4/ifwi-release.bin.sha256
+  if [ $DEBUG -eq 1 ]; then
+    echo "Result binary placed in $PWD/Outputs/odroid_h4/ifwi-debug.bin"
+    sha256sum Outputs/odroid_h4/ifwi-debug.bin > Outputs/odroid_h4/ifwi-debug.bin.sha256
+  else
+    echo "Result binary placed in $PWD/Outputs/odroid_h4/ifwi-release.bin"
+    sha256sum Outputs/odroid_h4/ifwi-release.bin > Outputs/odroid_h4/ifwi-release.bin.sha256
+  fi
 }
 
 build_qemu() {
@@ -57,6 +63,7 @@ build_qemu() {
 build_edk2() {
   local edk2_ver="$1"
   local flags="$2"
+  local build_type="RELEASE"
 
   rm -rf edk2
   mkdir edk2
@@ -72,11 +79,15 @@ build_edk2() {
   # Copy Dasharo logo
   cp ../Platform/CommonBoardPkg/Logo/Logo.bmp MdeModulePkg/Logo/Logo.bmp
 
+  if [ $DEBUG -eq 1 ]; then
+    build_type="DEBUG"
+  fi
+
   docker run --rm -i -u "$UID" -v "$PWD":/edk2 -w /edk2\
     $DOCKER_IMAGE:$DOCKER_IMAGE_VER /bin/bash <<EOF
     source edksetup.sh
     make -C BaseTools
-    python ./UefiPayloadPkg/UniversalPayloadBuild.py -t GCC5 -o Dasharo -b RELEASE \
+    python ./UefiPayloadPkg/UniversalPayloadBuild.py -t GCC5 -o Dasharo -b $build_type \
       $flags
 EOF
   cd ..
@@ -88,12 +99,18 @@ stitch_loader() {
   local platform_pkg="$3"
   local platform_data="$4"
 
+  local out_bin="Outputs/$platform/ifwi-release.bin"
+
+  if [ $DEBUG -eq 1 ]; then
+    out_bin="Outputs/$platform/ifwi-debug.bin"
+  fi
+
   docker run --rm -i -u $UID -v "$PWD":/home/docker/slimbootloader \
     -w /home/docker/slimbootloader $DOCKER_IMAGE:$DOCKER_IMAGE_VER /bin/bash <<EOF
       python Platform/$platform_pkg/Script/StitchLoader.py \
         -i $ifwi_image \
         -s Outputs/$platform/SlimBootloader.bin \
-        -o Outputs/$platform/ifwi-release.bin \
+        -o $out_bin \
         -p $platform_data
 EOF
 
@@ -101,8 +118,13 @@ EOF
 
 build_slimbootloader() {
   local platform="$1"
+  local release_build="-r"
 
   git submodule update --init --checkout --recursive --depth 1
+
+  if [ $DEBUG -eq 1 ]; then
+    release_build=""
+  fi
 
   mkdir -p PayloadPkg/PayloadBins/
   cp edk2/Build/UefiPayloadPkgX64/UniversalPayload.elf PayloadPkg/PayloadBins/
@@ -113,7 +135,7 @@ build_slimbootloader() {
       export SBL_KEY_DIR=/home/docker/slimbootloader/SblKeys
       export BUILD_NUMBER=0
       python BuildLoader.py clean
-      python BuildLoader.py build "$platform" -r \
+      python BuildLoader.py build "$platform" $release_build \
         -p "OsLoader.efi:LLDR:Lz4;UniversalPayload.elf:UEFI:Lzma"
 EOF
 
