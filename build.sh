@@ -13,6 +13,7 @@ usage() {
 
 DOCKER_IMAGE=${DOCKER_IMAGE:-ghcr.io/dasharo/dasharo-sdk}
 DOCKER_IMAGE_VER=${DOCKER_IMAGE_VER:-v1.7.0}
+SBL_KEY_DIR=${SBL_KEY_DIR:-"${PWD}/SblTestKeys"}
 
 EDK2_FLAGS="-D CRYPTO_PROTOCOL_SUPPORT=TRUE -D SIO_BUS_ENABLE=TRUE \
     -D PERFORMANCE_MEASUREMENT_ENABLE=TRUE \
@@ -106,9 +107,10 @@ build_slimbootloader() {
   mkdir -p PayloadPkg/PayloadBins/
   cp edk2/Build/UefiPayloadPkgX64/UniversalPayload.elf PayloadPkg/PayloadBins/
   docker run --rm -i -u $UID -v "$PWD":/home/docker/slimbootloader \
+    -v "$SBL_KEY_DIR":/home/docker/slimbootloader/SblKeys \
     -w /home/docker/slimbootloader $DOCKER_IMAGE:$DOCKER_IMAGE_VER /bin/bash <<EOF
       set -e
-      export SBL_KEY_DIR="\${PWD}/SblTestKeys"
+      export SBL_KEY_DIR=/home/docker/slimbootloader/SblKeys
       export BUILD_NUMBER=0
       python BuildLoader.py clean
       python BuildLoader.py build "$platform" -r \
