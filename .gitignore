@@ -16,3 +16,5 @@ PayloadModPkg
 edk2
 SblKeys
 image.rom
+image.bin
+blobs-pkg

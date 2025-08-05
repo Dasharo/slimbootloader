@@ -11,35 +11,52 @@ usage() {
   echo -e "\tqemu                   - build Dasharo compatible with QEMU Q35"
 }
 
-INPUT_IMAGE="${INPUT_IMAGE:-image.rom}"
+DOCKER_IMAGE=${DOCKER_IMAGE:-ghcr.io/dasharo/dasharo-sdk}
+DOCKER_IMAGE_VER=${DOCKER_IMAGE_VER:-v1.7.0}
 
-build_odroid_h4() {
-  local flags="-D CRYPTO_PROTOCOL_SUPPORT=TRUE -D SIO_BUS_ENABLE=TRUE \
+EDK2_FLAGS="-D CRYPTO_PROTOCOL_SUPPORT=TRUE -D SIO_BUS_ENABLE=TRUE \
     -D PERFORMANCE_MEASUREMENT_ENABLE=TRUE \
     -D MULTIPLE_DEBUG_PORT_SUPPORT=TRUE -D BOOTSPLASH_IMAGE=TRUE \
     -D BOOT_MANAGER_ESCAPE=TRUE"
-  if [ ! -f "$INPUT_IMAGE" ]; then
-    echo "$INPUT_IMAGE doesn't exist or isn't file."
-    echo "You can set different path to vendor image in INPUT_IMAGE variable"
-    exit 1
+
+build_odroid_h4() {
+  local blobs_rev="cbfff4d06009bc342b8638a9749fd0e286d5dcb3"
+
+  build_edk2 "edk2-stable202505" "$EDK2_FLAGS"
+  build_slimbootloader odroid_h4
+
+  if [ -f Outputs/odroid_h4/descriptor.bin ]; then
+    rm Outputs/odroid_h4/descriptor.bin
   fi
-  docker build -t sbl --network=host .
-  build_edk2 "edk2-stable202505" "$flags"
-  build_slimloader odroidh4 "0xAAFFFF0C"
-  echo "Result binary placed in $PWD/Outputs/odroidh4/ifwi-release.bin"
-  sha256sum Outputs/odroidh4/ifwi-release.bin >Outputs/odroidh4/ifwi-release.bin.sha256
+  wget https://github.com/Dasharo/dasharo-blobs/raw/$blobs_rev/hardkernel/odroid-h4/descriptor.bin \
+     -O Outputs/odroid_h4/descriptor.bin > /dev/null
+  if [ -f Outputs/odroid_h4/me.bin ]; then
+    rm Outputs/odroid_h4/me.bin
+  fi
+  wget https://github.com/Dasharo/dasharo-blobs/raw/$blobs_rev/hardkernel/odroid-h4/me.bin \
+    -O Outputs/odroid_h4/me.bin > /dev/null
+  dd if=/dev/zero of=image.bin bs=16M count=1 > /dev/null 2>&1
+  cat Outputs/odroid_h4/descriptor.bin Outputs/odroid_h4/me.bin | \
+    dd of=image.bin conv=notrunc > /dev/null 2>&1
+
+  stitch_loader odroid_h4 image.bin AlderlakeBoardPkg 0xAAFFFF0C
+  rm image.bin
+
+  echo "Result binary placed in $PWD/Outputs/odroid_h4/ifwi-release.bin"
+  sha256sum Outputs/odroid_h4/ifwi-release.bin > Outputs/odroid_h4/ifwi-release.bin.sha256
 }
 
 build_qemu() {
-  docker build -t sbl --network=host .
-  build_slimloader qemu ""
+  build_edk2 "edk2-stable202505" "$EDK2_FLAGS"
+  build_slimbootloader qemu
   echo "Result binary placed in $PWD/Outputs/qemu/SlimBootloader.bin"
-  sha256sum Outputs/qemu/SlimBootloader.bin >Outputs/qemu/SlimBootloader.bin.sha256
+  sha256sum Outputs/qemu/SlimBootloader.bin > Outputs/qemu/SlimBootloader.bin.sha256
 }
 
 build_edk2() {
-  EDK2_VERSION="$1"
-  FLAGS="$2"
+  local edk2_ver="$1"
+  local flags="$2"
+
   rm -rf edk2
   mkdir edk2
   cd edk2
@@ -47,53 +64,57 @@ build_edk2() {
   git init
   git remote remove origin 2>/dev/null || true
   git remote add origin https://github.com/tianocore/edk2.git
-  git fetch --depth 1 origin "$EDK2_VERSION"
+  git fetch --depth 1 origin "$edk2_ver"
   git checkout FETCH_HEAD --force
   git submodule update --init --checkout --recursive --depth 1
 
-  docker run --rm -i -u "$UID" -v "$PWD":/edk2 -w /edk2 sbl /bin/bash <<EOF
+  # Copy Dasharo logo
+  cp ../Platform/CommonBoardPkg/Logo/Logo.bmp MdeModulePkg/Logo/Logo.bmp
+
+  docker run --rm -i -u "$UID" -v "$PWD":/edk2 -w /edk2\
+    $DOCKER_IMAGE:$DOCKER_IMAGE_VER /bin/bash <<EOF
     source edksetup.sh
     make -C BaseTools
     python ./UefiPayloadPkg/UniversalPayloadBuild.py -t GCC5 -o Dasharo -b RELEASE \
-      $FLAGS
+      $flags
 EOF
   cd ..
 }
 
-build_slimloader() {
-  platform="$1"
-  platform_data="$2"
-  input="$(realpath "$INPUT_IMAGE")"
+stitch_loader() {
+  local platform="$1"
+  local ifwi_image="$2"
+  local platform_pkg="$3"
+  local platform_data="$4"
+
+  docker run --rm -i -u $UID -v "$PWD":/home/docker/slimbootloader \
+    -w /home/docker/slimbootloader $DOCKER_IMAGE:$DOCKER_IMAGE_VER /bin/bash <<EOF
+      python Platform/$platform_pkg/Script/StitchLoader.py \
+        -i $ifwi_image \
+        -s Outputs/$platform/SlimBootloader.bin \
+        -o Outputs/$platform/ifwi-release.bin \
+        -p $platform_data
+EOF
+
+}
+
+build_slimbootloader() {
+  local platform="$1"
+
   git submodule update --init --checkout --recursive --depth 1
-  if [ "$platform" = "qemu" ]; then
-    docker run --rm -i -u $UID -v "$PWD":/home/docker/slimbootloader \
-      -w /home/docker/slimbootloader sbl /bin/bash <<EOF
-        set -e
-        export SBL_KEY_DIR="\${PWD}/SblKeys"
-        if [ ! -d "\$SBL_KEY_DIR" ]; then
-          python BootloaderCorePkg/Tools/GenerateKeys.py -k "\$SBL_KEY_DIR"
-        fi
-        python BuildLoader.py build "$platform"
+
+  mkdir -p PayloadPkg/PayloadBins/
+  cp edk2/Build/UefiPayloadPkgX64/UniversalPayload.elf PayloadPkg/PayloadBins/
+  docker run --rm -i -u $UID -v "$PWD":/home/docker/slimbootloader \
+    -w /home/docker/slimbootloader $DOCKER_IMAGE:$DOCKER_IMAGE_VER /bin/bash <<EOF
+      set -e
+      export SBL_KEY_DIR="\${PWD}/SblTestKeys"
+      export BUILD_NUMBER=0
+      python BuildLoader.py clean
+      python BuildLoader.py build "$platform" -r \
+        -p "OsLoader.efi:LLDR:Lz4;UniversalPayload.elf:UEFI:Lzma"
 EOF
-  else
-    mkdir -p PayloadPkg/PayloadBins/
-    cp edk2/Build/UefiPayloadPkgX64/UniversalPayload.elf PayloadPkg/PayloadBins/
-    docker run --rm -i -u $UID -v "$input":/tmp/image.rom -v "$PWD":/home/docker/slimbootloader \
-      -w /home/docker/slimbootloader sbl /bin/bash <<EOF
-        set -e
-        export SBL_KEY_DIR="\${PWD}/SblKeys"
-        if [ ! -d "\$SBL_KEY_DIR" ]; then
-          python BootloaderCorePkg/Tools/GenerateKeys.py -k "\$SBL_KEY_DIR"
-        fi
-        python BuildLoader.py build "$platform" -r \
-          -p "OsLoader.efi:LLDR:Lz4;UniversalPayload.elf:UEFI:Lzma"
-        python Platform/AlderlakeBoardPkg/Script/StitchLoader.py \
-          -i "/tmp/image.rom" \
-          -s "Outputs/$platform/SlimBootloader.bin" \
-          -o "Outputs/$platform/ifwi-release.bin" \
-          -p "$platform_data"
-EOF
-  fi
+
 }
 
 if [ $# -ne 1 ]; then
