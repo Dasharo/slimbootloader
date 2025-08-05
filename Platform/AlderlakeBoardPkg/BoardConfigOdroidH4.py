@@ -33,6 +33,9 @@ class Board(AlderlakeBoardConfig.Board):
         self._LP_SUPPORT          = True
         self._N_SUPPORT           = True
 
+        # Use PKCS v1.5 signatures for build reproducibility
+        self._SIGNING_SCHEME      = 'RSA_PKCS1'
+
         self.PCI_EXPRESS_BASE     = 0xC0000000
         self.PCI_IO_BASE          = 0x00002000
         self.PCI_MEM32_BASE       = 0x80000000
