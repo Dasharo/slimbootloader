@@ -83,7 +83,8 @@ build_edk2() {
     build_type="DEBUG"
   fi
 
-  docker run --rm -i -u "$UID" -v "$PWD":/edk2 -w /edk2\
+  docker run --rm -i -u "$UID" -v "$PWD":/home/coreboot/coreboot \
+    -w /home/coreboot/coreboot \
     $DOCKER_IMAGE:$DOCKER_IMAGE_VER /bin/bash <<EOF
     source edksetup.sh
     make -C BaseTools
@@ -105,8 +106,8 @@ stitch_loader() {
     out_bin="Outputs/$platform/ifwi-debug.bin"
   fi
 
-  docker run --rm -i -u $UID -v "$PWD":/home/docker/slimbootloader \
-    -w /home/docker/slimbootloader $DOCKER_IMAGE:$DOCKER_IMAGE_VER /bin/bash <<EOF
+  docker run --rm -i -u $UID -v "$PWD":/home/coreboot/coreboot \
+    -w /home/coreboot/coreboot $DOCKER_IMAGE:$DOCKER_IMAGE_VER /bin/bash <<EOF
       python Platform/$platform_pkg/Script/StitchLoader.py \
         -i $ifwi_image \
         -s Outputs/$platform/SlimBootloader.bin \
@@ -128,11 +129,11 @@ build_slimbootloader() {
 
   mkdir -p PayloadPkg/PayloadBins/
   cp edk2/Build/UefiPayloadPkgX64/UniversalPayload.elf PayloadPkg/PayloadBins/
-  docker run --rm -i -u $UID -v "$PWD":/home/docker/slimbootloader \
-    -v "$SBL_KEY_DIR":/home/docker/slimbootloader/SblKeys \
-    -w /home/docker/slimbootloader $DOCKER_IMAGE:$DOCKER_IMAGE_VER /bin/bash <<EOF
+  docker run --rm -i -u $UID -v "$PWD":/home/coreboot/coreboot \
+    -v "$SBL_KEY_DIR":/home/coreboot/coreboot/SblKeys \
+    -w /home/coreboot/coreboot $DOCKER_IMAGE:$DOCKER_IMAGE_VER /bin/bash <<EOF
       set -e
-      export SBL_KEY_DIR=/home/docker/slimbootloader/SblKeys
+      export SBL_KEY_DIR=/home/coreboot/coreboot/SblKeys
       export BUILD_NUMBER=0
       python BuildLoader.py clean
       python BuildLoader.py build "$platform" $release_build \
